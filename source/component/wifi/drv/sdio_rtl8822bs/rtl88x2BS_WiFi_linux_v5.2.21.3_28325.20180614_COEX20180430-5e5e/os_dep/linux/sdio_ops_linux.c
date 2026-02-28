@@ -318,12 +318,14 @@ u8 sd_read8(struct intf_hdl *pintfhdl, u32 addr, s32 *err)
 	return v;
 }
 
+/* ========== 修改点1：sd_read16 函数 - 改为两个8位读 ========== */
 u16 sd_read16(struct intf_hdl *pintfhdl, u32 addr, s32 *err)
 {
 	PADAPTER padapter;
 	struct dvobj_priv *psdiodev;
 	PSDIO_DATA psdio;
 
+	u8 buf[2];
 	u16 v = 0;
 	struct sdio_func *func;
 	bool claim_needed;
@@ -342,14 +344,32 @@ u16 sd_read16(struct intf_hdl *pintfhdl, u32 addr, s32 *err)
 
 	if (claim_needed)
 		sdio_claim_host(func);
-	v = sdio_readw(func, addr, err);
+
+	/* 先读低8位 */
+	buf[0] = sdio_readb(func, addr, err);
+	if (*err) {
+		RTW_ERR("%s: read low byte failed at addr 0x%x, err=%d\n", __func__, addr, *err);
+		goto exit;
+	}
+
+	/* 再读高8位 */
+	buf[1] = sdio_readb(func, addr + 1, err);
+	if (*err) {
+		RTW_ERR("%s: read high byte failed at addr 0x%x, err=%d\n", __func__, addr + 1, *err);
+		goto exit;
+	}
+
+	/* 组合成16位值 */
+	v = (buf[1] << 8) | buf[0];
+
+	RTW_INFO("%s: addr=0x%x, val=0x%x (bytes: 0x%02x, 0x%02x)\n", 
+		 __func__, addr, v, buf[0], buf[1]);
+
+exit:
 	if (claim_needed)
 		sdio_release_host(func);
-	if (err && *err)
-		RTW_ERR("%s: FAIL!(%d) addr=0x%05x\n", __func__, *err, addr);
 
-
-	return  v;
+	return v;
 }
 
 u32 _sd_read32(struct intf_hdl *pintfhdl, u32 addr, s32 *err)
@@ -510,12 +530,14 @@ void sd_write8(struct intf_hdl *pintfhdl, u32 addr, u8 v, s32 *err)
 
 }
 
+/* ========== 修改点2：sd_write16 函数 - 改为两个8位写 ========== */
 void sd_write16(struct intf_hdl *pintfhdl, u32 addr, u16 v, s32 *err)
 {
 	PADAPTER padapter;
 	struct dvobj_priv *psdiodev;
 	PSDIO_DATA psdio;
 
+	u8 buf[2];
 	struct sdio_func *func;
 	bool claim_needed;
 
@@ -531,14 +553,33 @@ void sd_write16(struct intf_hdl *pintfhdl, u32 addr, u16 v, s32 *err)
 	func = psdio->func;
 	claim_needed = rtw_sdio_claim_host_needed(func);
 
+	/* 分解成两个字节 */
+	buf[0] = v & 0xFF;        /* 低8位 */
+	buf[1] = (v >> 8) & 0xFF; /* 高8位 */
+
+	RTW_INFO("%s: addr=0x%x, val=0x%x (bytes: 0x%02x, 0x%02x)\n", 
+		 __func__, addr, v, buf[0], buf[1]);
+
 	if (claim_needed)
 		sdio_claim_host(func);
-	sdio_writew(func, v, addr, err);
+
+	/* 先写低8位 */
+	sdio_writeb(func, buf[0], addr, err);
+	if (*err) {
+		RTW_ERR("%s: write low byte failed at addr 0x%x, err=%d\n", __func__, addr, *err);
+		goto exit;
+	}
+
+	/* 再写高8位 */
+	sdio_writeb(func, buf[1], addr + 1, err);
+	if (*err) {
+		RTW_ERR("%s: write high byte failed at addr 0x%x, err=%d\n", __func__, addr + 1, *err);
+		goto exit;
+	}
+
+exit:
 	if (claim_needed)
 		sdio_release_host(func);
-	if (err && *err)
-		RTW_ERR("%s: FAIL!(%d) addr=0x%05x val=0x%04x\n", __func__, *err, addr, v);
-
 }
 
 void _sd_write32(struct intf_hdl *pintfhdl, u32 addr, u32 v, s32 *err)
@@ -928,7 +969,6 @@ int __must_check rtw_sdio_raw_read(struct dvobj_priv *d, unsigned int addr,
 		dev_dbg(&func->dev, "rtw_sdio: READ use CMD52\n");
 	else
 		dev_dbg(&func->dev, "rtw_sdio: READ use CMD53\n");
-
 	dev_dbg(&func->dev, "rtw_sdio: READ from 0x%05x\n", addr);
 #endif /* RTW_SDIO_DUMP */
 
