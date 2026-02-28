@@ -9,7 +9,7 @@ ifeq ($(CFG_HI_EXPORT_FLAG),)
 
     include $(SDK_DIR)/base.mak
 endif
-
+EXTRA_CFLAGS += -msoft-float -march=armv7-a -mfloat-abi=soft
 EXTRA_CFLAGS += $(USER_EXTRA_CFLAGS)
 EXTRA_CFLAGS += -O1
 #EXTRA_CFLAGS += -O3
